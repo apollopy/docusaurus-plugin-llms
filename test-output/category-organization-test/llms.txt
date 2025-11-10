@@ -1,0 +1,46 @@
+# Test Documentation
+
+> Test documentation site
+
+This file contains links to documentation sections following the llmstxt.org standard.
+
+## Getting Started
+
+- [Overview](https://example.com/docs/guides/getting-started/overview/)
+- [License](https://example.com/docs/guides/getting-started/license/)
+
+### Changelog
+
+- [Version 1](https://example.com/docs/guides/getting-started/changelog/v1/)
+- [Version 2](https://example.com/docs/guides/getting-started/changelog/v2/)
+
+## API Reference
+
+- [Setup](https://example.com/docs/api/reference/setup/)
+- [Authentication](https://example.com/docs/api/reference/authentication/)
+
+## Platform
+
+### Update Policy
+
+- [Update Policy](https://example.com/docs/guides/platform/update-policy/)
+
+### Client SDK
+
+- [Client SDK Overview](https://example.com/docs/guides/platform/client-sdk/overview/)
+
+## Advanced Usage.md
+
+- [Advanced Usage Guide](https://example.com/docs/guides/advanced-usage/)
+
+## Core.md
+
+- [Core API Reference](https://example.com/docs/api/core/)
+
+## Overview.md
+
+- [API Overview](https://example.com/docs/api/overview/)
+
+## Plugins.md
+
+- [Plugins System](https://example.com/docs/api/plugins/)

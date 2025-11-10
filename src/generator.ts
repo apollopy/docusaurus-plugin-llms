@@ -35,6 +35,146 @@ function cleanDescriptionForToc(description: string): string {
 }
 
 /**
+ * Extract category name from document path
+ * @param docPath - Document path (e.g., '/docs/sdk/access/android-md5')
+ * @returns Category name (e.g., 'access')
+ */
+function extractCategoryFromPath(docPath: string): string {
+  // Remove leading/trailing slashes and split by '/'
+  const parts = docPath.replace(/^\/+|\/+$/g, '').split('/');
+  
+  // If path has at least 3 parts (e.g., docs/sdk/access), use the third part as category
+  // Otherwise, use the second part, or fallback to 'other'
+  if (parts.length >= 3) {
+    return parts[2]; // e.g., 'access' from 'docs/sdk/access/android-md5'
+  } else if (parts.length >= 2) {
+    return parts[1]; // e.g., 'pc' from 'docs/pc/cpp-sdk'
+  }
+  
+  return 'other';
+}
+
+/**
+ * Extract subdirectory name from document path within a category
+ * @param docPath - Document path (e.g., '/docs/sdk/start/release-notes/unity')
+ * @param docsDir - Docs directory name (e.g., 'docs')
+ * @returns Subdirectory name (e.g., 'release-notes') or null if at category root
+ */
+function extractSubdirectoryFromPath(docPath: string, docsDir: string): string | null {
+  // Remove leading/trailing slashes and file extension, then split by '/'
+  const parts = docPath.replace(/^\/+|\/+$/g, '').replace(/\.mdx?$/, '').split('/');
+  
+  // For paths like docs/sdk/start/release-notes/unity (5 parts), return 'release-notes'
+  // For paths like docs/sdk/start/agreement (4 parts), return null (at category root)
+  // We need at least 5 parts to have a subdirectory: docs/sdk/category/subdir/file
+  if (parts.length >= 5 && parts[0] === docsDir) {
+    return parts[3]; // e.g., 'release-notes' from 'docs/sdk/start/release-notes/unity'
+  }
+  
+  return null; // Document is at category root level
+}
+
+/**
+ * Format category name for display (capitalize and replace hyphens with spaces)
+ * @param category - Category name (e.g., 'getting-started')
+ * @returns Formatted category name (e.g., 'Getting started')
+ */
+function formatCategoryName(category: string): string {
+  return category
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
+ * Sort documents by sidebar_position, then by path
+ * @param docs - Array of documents to sort
+ * @returns Sorted array of documents
+ */
+function sortDocsByPosition(docs: DocInfo[]): DocInfo[] {
+  return [...docs].sort((a, b) => {
+    const posA = a.frontMatter?.sidebar_position ?? 999;
+    const posB = b.frontMatter?.sidebar_position ?? 999;
+    if (posA !== posB) {
+      return posA - posB;
+    }
+    return a.path.localeCompare(b.path);
+  });
+}
+
+/**
+ * Generate a link item from a document
+ * @param doc - Document information
+ * @param includeDescription - Whether to include description in the link
+ * @returns Formatted link string
+ */
+function generateLinkItem(doc: DocInfo, includeDescription: boolean): string {
+  if (includeDescription) {
+    const cleanedDescription = cleanDescriptionForToc(doc.description);
+    return `- [${doc.title}](${doc.url})${cleanedDescription ? `: ${cleanedDescription}` : ''}`;
+  } else {
+    return `- [${doc.title}](${doc.url})`;
+  }
+}
+
+/**
+ * Category metadata from _category_.json file
+ */
+interface CategoryMetadata {
+  position: number;
+  label: string | null;
+}
+
+/**
+ * Read category metadata from _category_.json file
+ * @param categoryPath - Path to the category directory
+ * @returns Category metadata with position and label, or null if not found
+ */
+async function readCategoryMetadata(categoryPath: string): Promise<CategoryMetadata | null> {
+  try {
+    const categoryJsonPath = path.join(categoryPath, '_category_.json');
+    const content = await fs.readFile(categoryJsonPath, 'utf8');
+    const categoryData = JSON.parse(content);
+    return {
+      position: categoryData.position !== undefined ? categoryData.position : 999,
+      label: categoryData.label || null
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get category metadata from document path
+ * @param docPath - Document path
+ * @param siteDir - Site directory
+ * @param docsDir - Docs directory name
+ * @returns Category metadata with position and label
+ */
+async function getCategoryMetadata(docPath: string, siteDir: string, docsDir: string): Promise<CategoryMetadata> {
+  // Extract category directory path from doc path
+  // docPath might be: 'docs/sdk/access/android-md5' or '/docs/sdk/access/android-md5.mdx'
+  // Remove leading/trailing slashes and file extension
+  let cleanPath = docPath.replace(/^\/+|\/+$/g, '').replace(/\.mdx?$/, '');
+  const pathParts = cleanPath.split('/');
+  
+  // Find the category directory (third part for docs/sdk/category or second for docs/category)
+  let categoryDir: string;
+  if (pathParts.length >= 3 && pathParts[0] === docsDir) {
+    // docs/sdk/access/android-md5 -> docs/sdk/access
+    categoryDir = path.join(siteDir, pathParts.slice(0, 3).join('/'));
+  } else if (pathParts.length >= 2 && pathParts[0] === docsDir) {
+    // docs/pc/cpp-sdk -> docs/pc
+    categoryDir = path.join(siteDir, pathParts.slice(0, 2).join('/'));
+  } else {
+    return { position: 999, label: null }; // Default for unknown categories
+  }
+  
+  const metadata = await readCategoryMetadata(categoryDir);
+  return metadata || { position: 999, label: null };
+}
+
+/**
  * Generate an LLM-friendly file
  * @param docs - Processed document information
  * @param outputPath - Path to write the output file
@@ -43,6 +183,9 @@ function cleanDescriptionForToc(description: string): string {
  * @param includeFullContent - Whether to include full content or just links
  * @param version - Version of the file
  * @param customRootContent - Optional custom content to include at the root level
+ * @param siteDir - Site directory (optional, needed for category position sorting)
+ * @param docsDir - Docs directory name (optional, needed for category position sorting)
+ * @param includeDescriptionInLinks - Whether to include description in links (default: true)
  */
 export async function generateLLMFile(
   docs: DocInfo[],
@@ -51,7 +194,10 @@ export async function generateLLMFile(
   fileDescription: string,
   includeFullContent: boolean,
   version?: string,
-  customRootContent?: string
+  customRootContent?: string,
+  siteDir?: string,
+  docsDir?: string,
+  includeDescriptionInLinks: boolean = true
 ): Promise<void> {
   console.log(`Generating file: ${outputPath}, version: ${version || 'undefined'}`);
   const versionInfo = version ? `\n\nVersion: ${version}` : '';
@@ -119,21 +265,137 @@ ${doc.content}`;
 
     await writeFile(outputPath, llmFileContent);
   } else {
-    // Generate links-only file
-    const tocItems = docs.map(doc => {
-      // Clean and format the description for TOC
-      const cleanedDescription = cleanDescriptionForToc(doc.description);
-      
-      return `- [${doc.title}](${doc.url})${cleanedDescription ? `: ${cleanedDescription}` : ''}`;
+    // Generate links-only file grouped by category
+    // Group docs by category
+    const docsByCategory = new Map<string, DocInfo[]>();
+    
+    for (const doc of docs) {
+      const category = extractCategoryFromPath(doc.path);
+      if (!docsByCategory.has(category)) {
+        docsByCategory.set(category, []);
+      }
+      docsByCategory.get(category)!.push(doc);
+    }
+    
+    // Sort categories by position from _category_.json, then alphabetically
+    // Also collect category labels for display
+    const categoryMetadataMap = new Map<string, CategoryMetadata>();
+    if (siteDir && docsDir) {
+      // Read metadata for all categories
+      const metadataPromises = Array.from(docsByCategory.keys()).map(async (category) => {
+        // Get a sample doc from this category to determine path
+        const sampleDoc = docsByCategory.get(category)![0];
+        const metadata = await getCategoryMetadata(sampleDoc.path, siteDir, docsDir);
+        categoryMetadataMap.set(category, metadata);
+      });
+      await Promise.all(metadataPromises);
+    }
+    
+    const sortedCategories = Array.from(docsByCategory.keys()).sort((a, b) => {
+      // If we have position data, sort by position first
+      if (categoryMetadataMap.has(a) && categoryMetadataMap.has(b)) {
+        const metaA = categoryMetadataMap.get(a)!;
+        const metaB = categoryMetadataMap.get(b)!;
+        if (metaA.position !== metaB.position) {
+          return metaA.position - metaB.position;
+        }
+      }
+      // Fallback to alphabetical sorting
+      return a.localeCompare(b);
     });
-
+    
+    // Generate sections for each category (async to read subdirectory metadata)
+    const categorySectionsPromises = sortedCategories.map(async (category) => {
+      const categoryDocs = docsByCategory.get(category)!;
+      
+      // Group documents by subdirectory
+      const docsBySubdir = new Map<string | null, DocInfo[]>();
+      const subdirPathMap = new Map<string, string>(); // Map subdir name to full path
+      
+      for (const doc of categoryDocs) {
+        const subdir = docsDir ? extractSubdirectoryFromPath(doc.path, docsDir) : null;
+        if (!docsBySubdir.has(subdir)) {
+          docsBySubdir.set(subdir, []);
+        }
+        docsBySubdir.get(subdir)!.push(doc);
+        
+        // Collect subdirectory paths for metadata reading (only once per subdir)
+        if (subdir && siteDir && docsDir && !subdirPathMap.has(subdir)) {
+          const pathParts = doc.path.replace(/^\/+|\/+$/g, '').replace(/\.mdx?$/, '').split('/');
+          // For subdirectories, we need at least 5 parts: docs/sdk/category/subdir/file
+          if (pathParts.length >= 5 && pathParts[0] === docsDir) {
+            const subdirPath = path.join(siteDir, pathParts.slice(0, 4).join('/'));
+            subdirPathMap.set(subdir, subdirPath);
+          }
+        }
+      }
+      
+      // Read subdirectory metadata
+      const subdirMetadataMap = new Map<string, CategoryMetadata>();
+      if (siteDir && docsDir && subdirPathMap.size > 0) {
+        const metadataPromises = Array.from(subdirPathMap.entries()).map(async ([subdirName, subdirPath]) => {
+          const metadata = await readCategoryMetadata(subdirPath);
+          if (metadata) {
+            subdirMetadataMap.set(subdirName, metadata);
+          }
+        });
+        await Promise.all(metadataPromises);
+      }
+      
+      // Use label from _category_.json if available, otherwise use formatted category name
+      const metadata = categoryMetadataMap.get(category);
+      const categoryTitle = metadata?.label || formatCategoryName(category);
+      
+      const sections: string[] = [];
+      
+      // Process root-level documents (no subdirectory)
+      const rootDocs = docsBySubdir.get(null) || [];
+      if (rootDocs.length > 0) {
+        const sortedRootDocs = sortDocsByPosition(rootDocs);
+        const rootItems = sortedRootDocs.map(doc => generateLinkItem(doc, includeDescriptionInLinks));
+        sections.push(rootItems.join('\n'));
+      }
+      
+      // Process subdirectories
+      const subdirs = Array.from(docsBySubdir.keys()).filter(s => s !== null) as string[];
+      // Sort subdirectories by position from _category_.json, then alphabetically
+      subdirs.sort((a, b) => {
+        const metaA = subdirMetadataMap.get(a);
+        const metaB = subdirMetadataMap.get(b);
+        if (metaA && metaB) {
+          if (metaA.position !== metaB.position) {
+            return metaA.position - metaB.position;
+          }
+        }
+        // Fallback to alphabetical sorting
+        return a.localeCompare(b);
+      });
+      
+      for (const subdir of subdirs) {
+        const subdirDocs = docsBySubdir.get(subdir)!;
+        const sortedSubdirDocs = sortDocsByPosition(subdirDocs);
+        
+        // Get subdirectory label from metadata or use formatted name
+        const subdirMetadata = subdirMetadataMap.get(subdir);
+        const subdirTitle = subdirMetadata?.label || formatCategoryName(subdir);
+        
+        const subdirItems = sortedSubdirDocs.map(doc => generateLinkItem(doc, includeDescriptionInLinks));
+        
+        sections.push(`### ${subdirTitle}\n\n${subdirItems.join('\n')}`);
+      }
+      
+      return `## ${categoryTitle}\n\n${sections.join('\n\n')}`;
+    });
+    
+    const categorySections = await Promise.all(categorySectionsPromises);
+    
     // Use custom root content or default message
     const rootContent = customRootContent || 'This file contains links to documentation sections following the llmstxt.org standard.';
     
     const llmFileContent = createMarkdownContent(
       fileTitle,
       `${fileDescription}${versionInfo}`,
-      `${rootContent}\n\n## Table of Contents\n\n${tocItems.join('\n')}`,
+      `${rootContent}\n\n${categorySections.join('\n\n')}`,
       true // include metadata (description)
     );
 
@@ -261,7 +523,9 @@ export async function generateStandardLLMFiles(
 ): Promise<void> {
   const { 
     outDir, 
+    siteDir,
     siteUrl,
+    docsDir,
     docTitle, 
     docDescription, 
     options 
@@ -277,7 +541,8 @@ export async function generateStandardLLMFiles(
     version,
     generateMarkdownFiles = false,
     rootContent,
-    fullRootContent
+    fullRootContent,
+    includeDescriptionInLinks = true
   } = options;
   
   if (!generateLLMsTxt && !generateLLMsFullTxt) {
@@ -318,7 +583,10 @@ export async function generateStandardLLMFiles(
       docDescription,
       false, // links only
       version,
-      rootContent
+      rootContent,
+      siteDir,
+      docsDir,
+      includeDescriptionInLinks
     );
   }
 
@@ -332,7 +600,10 @@ export async function generateStandardLLMFiles(
       docDescription,
       true, // full content
       version,
-      fullRootContent
+      fullRootContent,
+      siteDir,
+      docsDir,
+      includeDescriptionInLinks
     );
   }
 }
@@ -346,8 +617,8 @@ export async function generateCustomLLMFiles(
   context: PluginContext,
   allDocFiles: string[]
 ): Promise<void> {
-  const { outDir, siteUrl, docTitle, docDescription, options } = context;
-  const { customLLMFiles = [], ignoreFiles = [], generateMarkdownFiles = false } = options;
+  const { outDir, siteDir, siteUrl, docsDir, docTitle, docDescription, options } = context;
+  const { customLLMFiles = [], ignoreFiles = [], generateMarkdownFiles = false, includeDescriptionInLinks = true } = options;
   
   if (customLLMFiles.length === 0) {
     return;
@@ -400,7 +671,10 @@ export async function generateCustomLLMFiles(
         customDescription,
         customFile.fullContent,
         customFile.version,
-        customFile.rootContent
+        customFile.rootContent,
+        siteDir,
+        docsDir,
+        includeDescriptionInLinks
       );
       
       console.log(`Generated custom LLM file: ${customFile.filename} with ${customDocs.length} documents`);

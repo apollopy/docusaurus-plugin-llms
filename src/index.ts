@@ -123,6 +123,7 @@ export default function docusaurusPluginLLMs(
     keepFrontMatter = [],
     rootContent,
     fullRootContent,
+    includeDescriptionInLinks = true,
   } = options;
 
   const {
@@ -170,6 +171,7 @@ export default function docusaurusPluginLLMs(
       keepFrontMatter,
       rootContent,
       fullRootContent,
+      includeDescriptionInLinks,
     }
   };
 

@@ -15,6 +15,26 @@ import {
 } from './utils';
 
 /**
+ * File extension pattern for detecting URLs that should not end with /
+ * Matches common file extensions like .html, .md, .pdf, etc.
+ */
+const FILE_EXTENSION_PATTERN = /\.[a-zA-Z0-9]{1,10}$/;
+
+/**
+ * Normalize URL to ensure it ends with / unless it has a file extension
+ * @param url - URL object to normalize
+ * @returns Normalized URL string
+ */
+function normalizeUrlPath(url: URL): string {
+  const pathname = url.pathname;
+  // Don't add / if pathname already ends with / or has a file extension
+  if (!pathname.endsWith('/') && !FILE_EXTENSION_PATTERN.test(pathname)) {
+    url.pathname = pathname + '/';
+  }
+  return url.toString();
+}
+
+/**
  * Process a markdown file and extract its metadata and content
  * @param filePath - Path to the markdown file
  * @param baseDir - Base directory
@@ -55,7 +75,8 @@ export async function processMarkdownFile(
   
   if (resolvedUrl) {
     // Use the actual resolved URL from Docusaurus if provided
-    fullUrl = new URL(resolvedUrl, siteUrl).toString();
+    const url = new URL(resolvedUrl, siteUrl);
+    fullUrl = normalizeUrlPath(url);
   } else {
     // Fallback to the old path construction method
     // Convert .md extension to appropriate path
@@ -121,40 +142,20 @@ export async function processMarkdownFile(
     }
     
     // Generate full URL with transformed path and path prefix
-    fullUrl = new URL(
-      `${transformedPathPrefix ? `${transformedPathPrefix}/` : ''}${transformedLinkPath}`, 
-      siteUrl
-    ).toString();
+    const urlPath = `${transformedPathPrefix ? `${transformedPathPrefix}/` : ''}${transformedLinkPath}`;
+    const url = new URL(urlPath, siteUrl);
+    fullUrl = normalizeUrlPath(url);
   }
   
   // Extract title
   const title = extractTitle(data, resolvedContent, filePath);
   
-  // Get description from frontmatter or first paragraph
+  // Get description from frontmatter only (do not extract from content)
   let description = '';
   
-  // First priority: Use frontmatter description if available
+  // Only use frontmatter description if available
   if (data.description) {
     description = data.description;
-  } else {
-    // Second priority: Find the first non-heading paragraph
-    const paragraphs = resolvedContent.split('\n\n');
-    for (const para of paragraphs) {
-      const trimmedPara = para.trim();
-      // Skip empty paragraphs and headings
-      if (trimmedPara && !trimmedPara.startsWith('#')) {
-        description = trimmedPara;
-        break;
-      }
-    }
-    
-    // Third priority: If still no description, use the first heading's content
-    if (!description) {
-      const firstHeadingMatch = resolvedContent.match(/^#\s+(.*?)$/m);
-      if (firstHeadingMatch && firstHeadingMatch[1]) {
-        description = firstHeadingMatch[1].trim();
-      }
-    }
   }
   
   // Only remove heading markers at the beginning of descriptions or lines
