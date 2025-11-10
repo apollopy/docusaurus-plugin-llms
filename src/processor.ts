@@ -59,12 +59,48 @@ export async function processMarkdownFile(
   } else {
     // Fallback to the old path construction method
     // Convert .md extension to appropriate path
-    const linkPathBase = normalizedPath.replace(/\.mdx?$/, '');
+    let linkPathBase = normalizedPath.replace(/\.mdx?$/, '');
     
     // Handle index files specially
     let linkPath = linkPathBase.endsWith('index') 
       ? linkPathBase.replace(/\/index$/, '') 
       : linkPathBase;
+    
+    // Apply slug from frontmatter if available
+    // Docusaurus uses slug to override the default file path
+    if (data.slug) {
+      const slug = String(data.slug);
+      // If slug starts with /, it's an absolute path (relative to site root)
+      if (slug.startsWith('/')) {
+        // Remove leading slash and use as-is (will be combined with pathPrefix later)
+        linkPath = slug.substring(1);
+      } else {
+        // Relative slug: replaces the last segment of the path
+        const cleanSlug = slug.replace(/^\/+|\/+$/g, ''); // Remove leading/trailing slashes
+        if (cleanSlug) {
+          const pathParts = linkPath.split('/');
+          if (pathParts.length > 0) {
+            // Replace the last segment with the slug
+            pathParts[pathParts.length - 1] = cleanSlug;
+            linkPath = pathParts.join('/');
+          } else {
+            // If linkPath is empty, use slug directly
+            linkPath = cleanSlug;
+          }
+        }
+      }
+    } else if (data.id) {
+      // Fallback to id if slug is not available
+      // id replaces the last segment of the path
+      const id = String(data.id);
+      const pathParts = linkPath.split('/');
+      if (pathParts.length > 0) {
+        pathParts[pathParts.length - 1] = id;
+        linkPath = pathParts.join('/');
+      } else {
+        linkPath = id;
+      }
+    }
     
     // linkPath might include the pathPrefix (e.g., "docs/api/core")
     // We need to remove the pathPrefix before applying transformations, then add it back later
