@@ -412,6 +412,8 @@ export async function generateCustomLLMFiles(
 
 /**
  * Collect all document files from docs directory and optionally blog
+ * Note: This function is only called for the default locale build,
+ * as non-default locales are filtered out in postBuild hook
  * @param context - Plugin context
  * @returns Array of file paths
  */

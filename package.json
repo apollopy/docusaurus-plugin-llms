@@ -11,7 +11,8 @@
     "prepublishOnly": "npm run build && npm run cleanup",
     "test:unit": "node tests/test-path-transforms.js && node tests/test-header-deduplication.js && node tests/test-import-removal.js && node tests/test-partials.js && node tests/test-root-content.js && node tests/test-filenames.js",
     "test:integration": "node tests/test-path-transformation.js",
-    "test": "npm run build && npm run test:unit && npm run test:integration"
+    "test:locale": "node tests/test-default-locale-only.js",
+    "test": "npm run build && npm run test:unit && npm run test:integration && npm run test:locale"
   },
   "files": [
     "lib",

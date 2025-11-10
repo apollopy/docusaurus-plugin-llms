@@ -135,4 +135,5 @@ export interface PluginContext {
   routesPaths?: string[];
   routes?: RouteConfig[];
   routeMap?: Map<string, string>;
+  defaultLocale?: string;
 } 
