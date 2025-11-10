@@ -17,6 +17,9 @@ A Docusaurus plugin for generating LLM-friendly documentation following the [llm
 - 🚫 Optional import statement removal for cleaner MDX content
 - 🔄 Optional duplicate heading removal for concise output
 - 📊 Provides statistics about generated documentation
+- 📑 Automatic category organization using `_category_.json` files
+- 🔢 Smart sorting by category position and document sidebar_position
+- 🔗 URL normalization (trailing slashes and file extensions)
 
 ## Table of Contents
 
@@ -74,6 +77,8 @@ module.exports = {
         // Content cleaning options
         excludeImports: true,
         removeDuplicateHeadings: true,
+        // Control whether descriptions are included in links
+        includeDescriptionInLinks: true, // Set to false to exclude descriptions
         // Generate individual markdown files following llmstxt.org specification
         generateMarkdownFiles: true,
         // Control documentation order
@@ -140,6 +145,7 @@ module.exports = {
 | `keepFrontMatter`                | string[] | []                | Preserve selected front matter items when generating individual markdown files
 | `rootContent`                    | string   | (see below)       | Custom content to include at the root level of llms.txt       |
 | `fullRootContent`                | string   | (see below)       | Custom content to include at the root level of llms-full.txt  |
+| `includeDescriptionInLinks`      | boolean  | `true`            | Whether to include descriptions in links in llms.txt           |
 
 ### Custom Root Content
 
@@ -276,6 +282,40 @@ includeOrder: [
 ]
 ```
 Result: Installation and quick-start guides appear first, followed by other getting-started files, then API documentation in a specific order.
+
+### Description Inclusion Control (`includeDescriptionInLinks`)
+
+The `includeDescriptionInLinks` option controls whether descriptions are included in the links generated in `llms.txt`:
+
+**Example 1**: Include Descriptions (Default)
+```js
+{
+  includeDescriptionInLinks: true
+}
+```
+Output:
+```markdown
+- [Getting Started](https://example.com/docs/getting-started/): Introduction to the documentation
+- [API Reference](https://example.com/docs/api/): Complete API documentation
+```
+
+**Example 2**: Exclude Descriptions
+```js
+{
+  includeDescriptionInLinks: false
+}
+```
+Output:
+```markdown
+- [Getting Started](https://example.com/docs/getting-started/)
+- [API Reference](https://example.com/docs/api/)
+```
+
+**Use Cases**:
+- **Include descriptions** (`true`): Better for LLMs that need context about each link
+- **Exclude descriptions** (`false`): Cleaner, more concise output for simpler use cases
+
+Note: Descriptions are extracted from the `description` field in document frontmatter. If no description is available, the link will be generated without one regardless of this setting.
 
 ### Docusaurus Partials Support
 
@@ -832,11 +872,54 @@ Generate both original links and markdown files for different use cases:
 
 This plugin automatically generates the following files during the build process:
 
-- **llms.txt**: Contains links to all sections of your documentation
+- **llms.txt**: Contains links to all sections of your documentation, organized by category
 - **llms-full.txt**: Contains all documentation content in a single file
 - **Custom LLM files**: Additional files based on your custom configurations
 
 These files follow the [llmstxt standard](https://llmstxt.org/), making your documentation optimized for use with Large Language Models (LLMs).
+
+### Category Organization
+
+The plugin automatically organizes documentation links by category when generating `llms.txt`:
+
+- **Category Detection**: Categories are extracted from document paths (e.g., `docs/sdk/access` → category: `access`)
+- **Category Sorting**: Categories are sorted by the `position` field in `_category_.json` files, then alphabetically
+- **Category Labels**: Category titles use the `label` field from `_category_.json` files (e.g., "服务概览" instead of "Start")
+- **Subdirectory Support**: Supports nested subdirectories within categories (e.g., `docs/sdk/start/release-notes`)
+- **Document Sorting**: Documents within each category are sorted by `sidebar_position` from frontmatter, then alphabetically
+- **Root vs Subdirectories**: Root-level documents appear before subdirectory sections
+
+#### Example Output Structure
+
+```markdown
+## Getting Started
+
+- [Overview](https://example.com/docs/getting-started/overview/)
+- [License](https://example.com/docs/getting-started/license/)
+
+### Release Notes
+
+- [Version 1](https://example.com/docs/getting-started/release-notes/v1/)
+- [Version 2](https://example.com/docs/getting-started/release-notes/v2/)
+
+## API Reference
+
+- [Setup](https://example.com/docs/api/reference/setup/)
+- [Authentication](https://example.com/docs/api/reference/authentication/)
+```
+
+### URL Normalization
+
+The plugin automatically normalizes URLs in generated files:
+
+- **Trailing Slashes**: URLs end with `/` unless they have a file extension (e.g., `.html`, `.md`, `.pdf`)
+- **File Extensions**: URLs with file extensions (e.g., `page.html`) do not get a trailing slash
+- **Consistent Format**: Ensures all URLs follow a consistent format for better LLM consumption
+
+Examples:
+- `https://example.com/docs/page/` ✅ (no extension, ends with `/`)
+- `https://example.com/docs/page.html` ✅ (has extension, no trailing slash)
+- `https://example.com/docs/file.pdf` ✅ (has extension, no trailing slash)
 
 
 ## Implementation Details
@@ -847,12 +930,16 @@ The plugin:
 2. Optionally includes blog content
 3. Orders documents according to specified glob patterns (if provided)
 4. Extracts metadata, titles, and content from each file
-5. Creates proper URL links to each document section
-6. Applies path transformations according to configuration (removing or adding path segments)
-7. Generates a table of contents in `llms.txt`
-8. Combines all documentation content in `llms-full.txt`
-9. Creates custom LLM files based on specified configurations
-10. Provides statistics about the generated documentation
+5. Groups documents by category based on their file paths
+6. Reads `_category_.json` files to get category labels and positions
+7. Sorts categories by position (from `_category_.json`), then alphabetically
+8. Sorts documents within categories by `sidebar_position` (from frontmatter), then alphabetically
+9. Creates proper URL links to each document section with normalized formatting
+10. Applies path transformations according to configuration (removing or adding path segments)
+11. Generates organized category sections in `llms.txt` with optional descriptions
+12. Combines all documentation content in `llms-full.txt`
+13. Creates custom LLM files based on specified configurations
+14. Provides statistics about the generated documentation
 
 ## Testing
 
